@@ -1,374 +1,246 @@
-import { useState, useRef } from “react”;
+import { useState, useRef, useEffect } from "react";
 
 const GOALS = { calories: 2200, protein: 150, carbs: 220, fat: 70 };
-const UNITS = [“g”, “oz”, “cup”, “tbsp”, “tsp”, “piece”];
-const MACRO_COLORS = {
-protein: { bar: “#4ade80”, glow: “rgba(74,222,128,0.4)” },
-carbs: { bar: “#60a5fa”, glow: “rgba(96,165,250,0.4)” },
-fat: { bar: “#f59e0b”, glow: “rgba(245,158,11,0.4)” },
-};
-const PRESETS = [
-{ name: “Chicken Breast”, calories: 165, protein: 31, carbs: 0, fat: 3.6, per: “100g” },
-{ name: “Brown Rice”, calories: 216, protein: 5, carbs: 45, fat: 1.8, per: “100g” },
-{ name: “Whole Egg”, calories: 78, protein: 6, carbs: 0.6, fat: 5.3, per: “1 piece” },
-{ name: “Greek Yogurt”, calories: 130, protein: 22, carbs: 9, fat: 0.7, per: “200g” },
-{ name: “Oats”, calories: 188, protein: 6.5, carbs: 32, fat: 3.5, per: “½ cup” },
-{ name: “Protein Shake”, calories: 130, protein: 25, carbs: 5, fat: 2, per: “1 scoop” },
+
+const UNITS = ["g", "oz", "cup", "tbsp", "tsp", "piece"];
+
+const FRACTIONS = [
+  { label: "1/4", value: 0.25 },
+  { label: "1/3", value: 0.33 },
+  { label: "1/2", value: 0.5 },
+  { label: "2/3", value: 0.66 },
+  { label: "3/4", value: 0.75 },
+  { label: "1", value: 1 },
+  { label: "1.5", value: 1.5 },
+  { label: "2", value: 2 },
 ];
 
-function Ring({ value, max, size = 92, color, children }) {
-const r = (size - 12) / 2;
-const circ = 2 * Math.PI * r;
-const dash = Math.min(value / max, 1) * circ;
-return (
-<div style={{ position: “relative”, width: size, height: size, flexShrink: 0 }}>
-<svg width={size} height={size} style={{ transform: “rotate(-90deg)” }}>
-<circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={10} />
-<circle cx={size/2} cy={size/2} r={r} fill=“none” stroke={color} strokeWidth={10}
-strokeDasharray={`${dash} ${circ}`} strokeLinecap=“round”
-style={{ transition: “stroke-dasharray 0.6s cubic-bezier(0.34,1.56,0.64,1)”, filter: `drop-shadow(0 0 6px ${color})` }} />
-</svg>
-<div style={{ position:“absolute”,inset:0,display:“flex”,alignItems:“center”,justifyContent:“center”,flexDirection:“column” }}>
-{children}
-</div>
-</div>
-);
-}
-
-function MacroBar({ label, value, goal, color, glow }) {
-const pct = Math.min((value / goal) * 100, 100);
-return (
-<div style={{ marginBottom: 13 }}>
-<div style={{ display:“flex”,justifyContent:“space-between”,marginBottom:5,fontSize:11,fontFamily:”‘DM Mono’,monospace”,letterSpacing:“0.05em” }}>
-<span style={{ color:“rgba(255,255,255,0.45)”,textTransform:“uppercase” }}>{label}</span>
-<span style={{ color:“rgba(255,255,255,0.85)” }}>{Math.round(value)}<span style={{ color:“rgba(255,255,255,0.3)” }}>/{goal}g</span></span>
-</div>
-<div style={{ height:5,background:“rgba(255,255,255,0.07)”,borderRadius:99,overflow:“hidden” }}>
-<div style={{ height:“100%”,width:`${pct}%`,background:color,borderRadius:99,
-transition:“width 0.5s cubic-bezier(0.34,1.56,0.64,1)”,boxShadow:`0 0 8px ${glow}` }} />
-</div>
-</div>
-);
-}
-
-function Spinner() {
-return (
-<div style={{ display:“flex”,flexDirection:“column”,alignItems:“center”,gap:14,padding:“30px 0” }}>
-<div style={{ width:36,height:36,border:“3px solid rgba(255,255,255,0.1)”,borderTop:“3px solid #fff”,borderRadius:“50%”,animation:“spin 0.8s linear infinite” }} />
-<span style={{ color:“rgba(255,255,255,0.4)”,fontSize:12,fontFamily:”‘DM Mono’,monospace”,letterSpacing:“0.1em” }}>ANALYSING…</span>
-</div>
-);
-}
-
-export default function MacroTracker() {
-const [entries, setEntries] = useState([]);
-const [tab, setTab] = useState(“log”);
-const [flash, setFlash] = useState(null);
-const [custom, setCustom] = useState({ name:””,calories:””,protein:””,carbs:””,fat:””,qty:“1”,unit:“g” });
-const [photoPreview, setPhotoPreview] = useState(null);
-const [photoBase64, setPhotoBase64] = useState(null);
-const [scanning, setScanning] = useState(false);
-const [scanResult, setScanResult] = useState(null);
-const [scanError, setScanError] = useState(null);
-const fileRef = useRef();
-
-const totals = entries.reduce((acc, e) => ({
-calories: acc.calories + e.calories,
-protein: acc.protein + e.protein,
-carbs: acc.carbs + e.carbs,
-fat: acc.fat + e.fat,
-}), { calories:0,protein:0,carbs:0,fat:0 });
-
-function addEntry(item) {
-setEntries(prev => […prev, { …item, id: Date.now() + Math.random() }]);
-setFlash(item.name);
-setTimeout(() => setFlash(null), 1400);
-}
-
-function handlePhotoChange(e) {
-const file = e.target.files[0];
-if (!file) return;
-const reader = new FileReader();
-reader.onload = ev => {
-const dataUrl = ev.target.result;
-setPhotoPreview(dataUrl);
-setPhotoBase64(dataUrl.split(”,”)[1]);
-setScanResult(null);
-setScanError(null);
-};
-reader.readAsDataURL(file);
-}
-
-async function scanPhoto() {
-if (!photoBase64) return;
-setScanning(true);
-setScanError(null);
-setScanResult(null);
-try {
-const prompt = `You are a registered dietitian and food recognition expert. Analyse this food photo carefully.
-
-Identify every distinct food item visible. For each item:
-
-- Estimate the quantity in the most natural unit (cups, tbsp, pieces, grams, oz)
-- Calculate macros for that estimated quantity
-
-Return ONLY a raw JSON array. No markdown, no code fences, no explanation. Format:
-[{“name”:“Food name”,“estimated_qty”:“e.g. 1 cup”,“calories”:number,“protein”:number,“carbs”:number,“fat”:number}]`;
-
-```
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: photoBase64 } },
-          { type: "text", text: prompt }
-        ]
-      }]
-    })
+export default function App() {
+  const [entries, setEntries] = useState(() => {
+    const saved = localStorage.getItem("macro_entries");
+    return saved ? JSON.parse(saved) : [];
   });
-  const data = await res.json();
-  const text = (data.content || []).map(b => b.text || "").join("").trim();
-  const clean = text.replace(/```json|```/g, "").trim();
-  const parsed = JSON.parse(clean);
-  setScanResult(parsed);
-} catch (err) {
-  setScanError("Couldn't analyse the photo. Try a clearer, well-lit shot.");
-} finally {
-  setScanning(false);
-}
-```
 
-}
+  const [custom, setCustom] = useState({
+    name: "",
+    calories: "",
+    protein: "",
+    carbs: "",
+    fat: "",
+    qty: 1,
+    unit: "cup",
+  });
 
-function addCustom() {
-if (!custom.name || !custom.calories) return;
-addEntry({
-name: `${custom.name} (${custom.qty} ${custom.unit})`,
-calories: +custom.calories||0, protein: +custom.protein||0,
-carbs: +custom.carbs||0, fat: +custom.fat||0,
-});
-setCustom({ name:””,calories:””,protein:””,carbs:””,fat:””,qty:“1”,unit:“g” });
-setTab(“log”);
-}
+  useEffect(() => {
+    localStorage.setItem("macro_entries", JSON.stringify(entries));
+  }, [entries]);
 
-function clearScan() {
-setPhotoPreview(null); setPhotoBase64(null);
-setScanResult(null); setScanError(null);
-if (fileRef.current) fileRef.current.value = “”;
-}
+  const totals = entries.reduce(
+    (acc, e) => ({
+      calories: acc.calories + e.calories,
+      protein: acc.protein + e.protein,
+      carbs: acc.carbs + e.carbs,
+      fat: acc.fat + e.fat,
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0 }
+  );
 
-const inp = {
-background:“rgba(255,255,255,0.05)”,border:“1px solid rgba(255,255,255,0.09)”,
-borderRadius:10,padding:“11px 14px”,color:”#fff”,fontSize:14,
-fontFamily:”‘DM Sans’,sans-serif”,width:“100%”,
-};
-const secLabel = { fontSize:11,fontFamily:”‘DM Mono’,monospace”,letterSpacing:“0.12em”,color:“rgba(255,255,255,0.3)”,textTransform:“uppercase”,marginBottom:10 };
+  function addEntry(item) {
+    setEntries((prev) => [...prev, { ...item, id: Date.now() }]);
+  }
 
-return (
-<div style={{ minHeight:“100vh”,background:”#0a0a0f”,fontFamily:”‘DM Sans’,sans-serif”,color:”#fff”,padding:“24px 16px 52px”,maxWidth:420,margin:“0 auto” }}>
-<style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap'); * { box-sizing:border-box; } input,select { outline:none; } input::placeholder { color:rgba(255,255,255,0.2); } select option { background:#141420; color:#fff; } .entry-row:hover .del-btn { opacity:1 !important; } .tab-btn:hover { color:rgba(255,255,255,0.7) !important; } .preset-row:hover { background:rgba(255,255,255,0.08) !important; border-color:rgba(255,255,255,0.18) !important; } .scan-card:hover { border-color:rgba(255,255,255,0.22) !important; background:rgba(255,255,255,0.07) !important; } .upload-zone:hover { border-color:rgba(255,255,255,0.28) !important; } @keyframes spin { to { transform:rotate(360deg); } } @keyframes fadein { from { opacity:0;transform:translateY(6px); } to { opacity:1;transform:translateY(0); } } .fadein { animation:fadein 0.3s ease both; }`}</style>
+  function addCustom() {
+    if (!custom.name || !custom.calories) return;
 
-```
-  {/* Header */}
-  <div style={{ marginBottom:24 }}>
-    <div style={{ fontSize:11,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",color:"rgba(255,255,255,0.28)",textTransform:"uppercase",marginBottom:4 }}>
-      {new Date().toLocaleDateString("en-CA",{weekday:"long",month:"short",day:"numeric"})}
-    </div>
-    <h1 style={{ margin:0,fontFamily:"'Syne',sans-serif",fontSize:30,fontWeight:800,letterSpacing:"-0.02em",background:"linear-gradient(135deg,#fff 60%,rgba(255,255,255,0.35))",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent" }}>
-      Macros
-    </h1>
-  </div>
+    const q = Number(custom.qty) || 1;
 
-  {/* Dashboard */}
-  <div style={{ background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,padding:"20px 20px 16px",marginBottom:16,display:"flex",gap:18,alignItems:"center" }}>
-    <Ring value={totals.calories} max={GOALS.calories} color="#fff">
-      <span style={{ fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:800,lineHeight:1 }}>{Math.round(totals.calories)}</span>
-      <span style={{ fontFamily:"'DM Mono',monospace",fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:"0.1em",marginTop:2 }}>KCAL</span>
-    </Ring>
-    <div style={{ flex:1 }}>
-      <MacroBar label="Protein" value={totals.protein} goal={GOALS.protein} color={MACRO_COLORS.protein.bar} glow={MACRO_COLORS.protein.glow}/>
-      <MacroBar label="Carbs" value={totals.carbs} goal={GOALS.carbs} color={MACRO_COLORS.carbs.bar} glow={MACRO_COLORS.carbs.glow}/>
-      <MacroBar label="Fat" value={totals.fat} goal={GOALS.fat} color={MACRO_COLORS.fat.bar} glow={MACRO_COLORS.fat.glow}/>
-    </div>
-  </div>
+    addEntry({
+      name: `${custom.name} (${custom.qty} ${custom.unit})`,
+      calories: (Number(custom.calories) || 0) * q,
+      protein: (Number(custom.protein) || 0) * q,
+      carbs: (Number(custom.carbs) || 0) * q,
+      fat: (Number(custom.fat) || 0) * q,
+    });
 
-  {/* Tabs */}
-  <div style={{ display:"flex",gap:3,marginBottom:14,background:"rgba(255,255,255,0.04)",borderRadius:12,padding:4 }}>
-    {[["log","📋 Log"],["scan","📷 Scan"],["add","+ Manual"]].map(([t,label]) => (
-      <button key={t} className="tab-btn" onClick={()=>setTab(t)} style={{
-        flex:1,padding:"8px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,
-        fontFamily:"'DM Sans',sans-serif",transition:"all 0.2s",
-        background:tab===t?"rgba(255,255,255,0.1)":"transparent",
-        color:tab===t?"#fff":"rgba(255,255,255,0.35)",
-      }}>{label}</button>
-    ))}
-  </div>
+    setCustom({
+      name: "",
+      calories: "",
+      protein: "",
+      carbs: "",
+      fat: "",
+      qty: 1,
+      unit: "cup",
+    });
+  }
 
-  {flash && (
-    <div className="fadein" style={{ background:"rgba(74,222,128,0.1)",border:"1px solid rgba(74,222,128,0.28)",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#4ade80" }}>
-      ✓ Added {flash}
-    </div>
-  )}
+  const pct = (val, goal) => Math.min((val / goal) * 100, 100);
 
-  {/* ── LOG ── */}
-  {tab==="log" && (
-    <div>
-      {entries.length===0 ? (
-        <div style={{ textAlign:"center",padding:"40px 0",color:"rgba(255,255,255,0.18)",fontSize:13,lineHeight:1.6 }}>
-          Nothing logged yet<br/>
-          <span style={{ color:"rgba(255,255,255,0.35)" }}>📷 Scan a meal or + Manual add</span>
-        </div>
-      ) : (
-        <div style={{ display:"flex",flexDirection:"column",gap:7 }}>
-          {entries.map(e=>(
-            <div key={e.id} className="entry-row" style={{ background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:13,padding:"11px 13px",display:"flex",alignItems:"center",gap:10 }}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:13,fontWeight:500,marginBottom:3 }}>{e.name}</div>
-                <div style={{ display:"flex",gap:8,fontFamily:"'DM Mono',monospace",fontSize:10,flexWrap:"wrap" }}>
-                  <span style={{ color:"rgba(255,255,255,0.55)" }}>{Math.round(e.calories)} kcal</span>
-                  <span style={{ color:MACRO_COLORS.protein.bar }}>P {Math.round(e.protein)}g</span>
-                  <span style={{ color:MACRO_COLORS.carbs.bar }}>C {Math.round(e.carbs)}g</span>
-                  <span style={{ color:MACRO_COLORS.fat.bar }}>F {Math.round(e.fat)}g</span>
-                </div>
-              </div>
-              <button className="del-btn" onClick={()=>setEntries(prev=>prev.filter(x=>x.id!==e.id))}
-                style={{ opacity:0,background:"rgba(255,60,60,0.15)",border:"1px solid rgba(255,60,60,0.2)",borderRadius:7,color:"#ff6b6b",width:28,height:28,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",transition:"opacity 0.2s",flexShrink:0 }}>×</button>
-            </div>
-          ))}
-          <button onClick={()=>setEntries([])} style={{ marginTop:2,background:"none",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,color:"rgba(255,255,255,0.2)",fontSize:12,padding:"8px 0",cursor:"pointer",fontFamily:"'DM Sans',sans-serif" }}>Clear all</button>
-        </div>
-      )}
-    </div>
-  )}
+  const box = {
+    background: "rgba(255,255,255,0.05)",
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+  };
 
-  {/* ── SCAN ── */}
-  {tab==="scan" && (
-    <div>
-      {!photoPreview ? (
-        <div className="upload-zone" onClick={()=>fileRef.current?.click()}
-          style={{ border:"2px dashed rgba(255,255,255,0.12)",borderRadius:16,padding:"40px 20px",textAlign:"center",cursor:"pointer",transition:"border-color 0.2s" }}>
-          <div style={{ fontSize:40,marginBottom:12 }}>📷</div>
-          <div style={{ fontSize:14,fontWeight:600,marginBottom:6 }}>Take or upload a photo</div>
-          <div style={{ fontSize:12,color:"rgba(255,255,255,0.35)",lineHeight:1.5 }}>
-            Claude AI will identify each food and<br/>estimate macros + portion sizes
-          </div>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} style={{ display:"none" }}/>
-        </div>
-      ) : (
-        <div className="fadein">
-          <div style={{ position:"relative",borderRadius:14,overflow:"hidden",marginBottom:14 }}>
-            <img src={photoPreview} alt="meal" style={{ width:"100%",maxHeight:220,objectFit:"cover",display:"block" }}/>
-            <button onClick={clearScan} style={{ position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.65)",border:"none",borderRadius:20,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center" }}>×</button>
-          </div>
+  const input = {
+    padding: 10,
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "transparent",
+    color: "#fff",
+    width: "100%",
+  };
 
-          {!scanning && !scanResult && (
-            <button onClick={scanPhoto} style={{ width:"100%",background:"linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))",border:"1px solid rgba(255,255,255,0.16)",borderRadius:13,padding:"14px 0",color:"#fff",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.01em" }}>
-              ✨ Analyse with AI
-            </button>
-          )}
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "linear-gradient(180deg,#0a0a0f,#11111a)",
+        color: "#fff",
+        fontFamily: "sans-serif",
+        padding: 20,
+        maxWidth: 420,
+        margin: "0 auto",
+      }}
+    >
+      <h1>Macros</h1>
 
-          {scanning && <Spinner/>}
+      {/* TOTALS */}
+      <div style={box}>
+        <div>Calories: {Math.round(totals.calories)} / {GOALS.calories}</div>
+        <div>Protein: {Math.round(totals.protein)}g</div>
+        <div>Carbs: {Math.round(totals.carbs)}g</div>
+        <div>Fat: {Math.round(totals.fat)}g</div>
 
-          {scanError && (
-            <div style={{ background:"rgba(255,90,90,0.1)",border:"1px solid rgba(255,90,90,0.22)",borderRadius:10,padding:"12px 14px",color:"#ff8080",fontSize:13 }}>
-              {scanError}
-            </div>
-          )}
-
-          {scanResult && (
-            <div className="fadein">
-              <div style={{ ...secLabel, marginBottom:10 }}>Tap to add to log</div>
-              <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-                {scanResult.map((item,i)=>(
-                  <div key={i} className="scan-card"
-                    onClick={()=>{ addEntry({ name:`${item.name} (${item.estimated_qty})`,calories:item.calories,protein:item.protein,carbs:item.carbs,fat:item.fat }); setTab("log"); }}
-                    style={{ background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:13,padding:"12px 14px",cursor:"pointer",transition:"all 0.15s" }}>
-                    <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6 }}>
-                      <div>
-                        <div style={{ fontSize:14,fontWeight:600 }}>{item.name}</div>
-                        <div style={{ fontSize:11,color:"rgba(255,255,255,0.35)",fontFamily:"'DM Mono',monospace",marginTop:2 }}>{item.estimated_qty}</div>
-                      </div>
-                      <div style={{ fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:"rgba(255,255,255,0.75)",textAlign:"right" }}>
-                        {item.calories}
-                        <div style={{ fontSize:9,fontWeight:400,color:"rgba(255,255,255,0.28)",fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em" }}>KCAL</div>
-                      </div>
-                    </div>
-                    <div style={{ display:"flex",gap:12,fontFamily:"'DM Mono',monospace",fontSize:10 }}>
-                      <span style={{ color:MACRO_COLORS.protein.bar }}>P {item.protein}g</span>
-                      <span style={{ color:MACRO_COLORS.carbs.bar }}>C {item.carbs}g</span>
-                      <span style={{ color:MACRO_COLORS.fat.bar }}>F {item.fat}g</span>
-                    </div>
-                  </div>
-                ))}
-
-                <button onClick={()=>{ scanResult.forEach(item=>addEntry({ name:`${item.name} (${item.estimated_qty})`,calories:item.calories,protein:item.protein,carbs:item.carbs,fat:item.fat })); clearScan(); setTab("log"); }}
-                  style={{ marginTop:2,background:"rgba(74,222,128,0.1)",border:"1px solid rgba(74,222,128,0.22)",borderRadius:11,padding:"12px 0",color:"#4ade80",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif" }}>
-                  Add All to Log
-                </button>
-                <button onClick={clearScan} style={{ background:"none",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 0",color:"rgba(255,255,255,0.22)",fontSize:12,cursor:"pointer",fontFamily:"'DM Sans',sans-serif" }}>
-                  Scan another
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )}
-
-  {/* ── MANUAL ── */}
-  {tab==="add" && (
-    <div>
-      <div style={{ marginBottom:20 }}>
-        <div style={secLabel}>Quick Add</div>
-        <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-          {PRESETS.map(p=>(
-            <button key={p.name} className="preset-row" onClick={()=>{ addEntry({ name:`${p.name} (${p.per})`,calories:p.calories,protein:p.protein,carbs:p.carbs,fat:p.fat }); setTab("log"); }}
-              style={{ background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:11,padding:"10px 13px",cursor:"pointer",textAlign:"left",transition:"all 0.15s",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-              <div>
-                <span style={{ fontSize:13,fontWeight:500,color:"#fff" }}>{p.name}</span>
-                <span style={{ fontSize:10,color:"rgba(255,255,255,0.28)",fontFamily:"'DM Mono',monospace",marginLeft:8 }}>{p.per}</span>
-              </div>
-              <div style={{ display:"flex",gap:7,fontFamily:"'DM Mono',monospace",fontSize:10,color:"rgba(255,255,255,0.35)" }}>
-                <span>{p.calories}</span>
-                <span style={{ color:MACRO_COLORS.protein.bar }}>P{p.protein}</span>
-                <span style={{ color:MACRO_COLORS.carbs.bar }}>C{p.carbs}</span>
-              </div>
-            </button>
-          ))}
+        <div style={{ height: 6, background: "#222", marginTop: 10 }}>
+          <div style={{ width: `${pct(totals.calories, GOALS.calories)}%`, height: "100%", background: "#fff" }} />
         </div>
       </div>
 
-      <div style={{ borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:18 }}>
-        <div style={secLabel}>Custom Entry</div>
-        <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-          <input type="text" placeholder="Food name" value={custom.name} onChange={e=>setCustom(p=>({...p,name:e.target.value}))} style={inp}/>
-          <div style={{ display:"flex",gap:8 }}>
-            <input type="number" placeholder="Qty" min="0.1" step="0.25" value={custom.qty} onChange={e=>setCustom(p=>({...p,qty:e.target.value}))} style={{ ...inp,width:80,flexShrink:0 }}/>
-            <select value={custom.unit} onChange={e=>setCustom(p=>({...p,unit:e.target.value}))} style={{ ...inp,flex:1,appearance:"none",cursor:"pointer" }}>
-              {UNITS.map(u=><option key={u} value={u}>{u}</option>)}
-            </select>
+      {/* ADD FOOD */}
+      <div style={box}>
+        <h3>Add Food</h3>
+
+        <input
+          placeholder="Food name"
+          value={custom.name}
+          onChange={(e) => setCustom({ ...custom, name: e.target.value })}
+          style={input}
+        />
+
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <select
+            value={custom.qty}
+            onChange={(e) =>
+              setCustom({ ...custom, qty: Number(e.target.value) })
+            }
+            style={input}
+          >
+            {FRACTIONS.map((f) => (
+              <option key={f.label} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={custom.unit}
+            onChange={(e) =>
+              setCustom({ ...custom, unit: e.target.value })
+            }
+            style={input}
+          >
+            {UNITS.map((u) => (
+              <option key={u}>{u}</option>
+            ))}
+          </select>
+        </div>
+
+        <input
+          placeholder="Calories"
+          type="number"
+          value={custom.calories}
+          onChange={(e) =>
+            setCustom({ ...custom, calories: e.target.value })
+          }
+          style={{ ...input, marginTop: 8 }}
+        />
+
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <input
+            placeholder="Protein"
+            type="number"
+            value={custom.protein}
+            onChange={(e) =>
+              setCustom({ ...custom, protein: e.target.value })
+            }
+            style={input}
+          />
+          <input
+            placeholder="Carbs"
+            type="number"
+            value={custom.carbs}
+            onChange={(e) =>
+              setCustom({ ...custom, carbs: e.target.value })
+            }
+            style={input}
+          />
+          <input
+            placeholder="Fat"
+            type="number"
+            value={custom.fat}
+            onChange={(e) =>
+              setCustom({ ...custom, fat: e.target.value })
+            }
+            style={input}
+          />
+        </div>
+
+        <button
+          onClick={addCustom}
+          style={{
+            marginTop: 10,
+            padding: 12,
+            width: "100%",
+            borderRadius: 10,
+            border: "none",
+            background: "#fff",
+            color: "#000",
+            fontWeight: "bold",
+            cursor: "pointer",
+          }}
+        >
+          Add
+        </button>
+      </div>
+
+      {/* LOG */}
+      <div style={box}>
+        <h3>Log</h3>
+
+        {entries.map((e) => (
+          <div key={e.id} style={{ marginBottom: 8 }}>
+            {e.name} — {Math.round(e.calories)} kcal
           </div>
-          <input type="number" placeholder="Calories" value={custom.calories} onChange={e=>setCustom(p=>({...p,calories:e.target.value}))} style={inp}/>
-          <div style={{ display:"flex",gap:7 }}>
-            <input type="number" placeholder="Protein g" value={custom.protein} onChange={e=>setCustom(p=>({...p,protein:e.target.value}))} style={{ ...inp,flex:1 }}/>
-            <input type="number" placeholder="Carbs g" value={custom.carbs} onChange={e=>setCustom(p=>({...p,carbs:e.target.value}))} style={{ ...inp,flex:1 }}/>
-            <input type="number" placeholder="Fat g" value={custom.fat} onChange={e=>setCustom(p=>({...p,fat:e.target.value}))} style={{ ...inp,flex:1 }}/>
-          </div>
-          <button onClick={addCustom} style={{ marginTop:4,background:"linear-gradient(135deg,rgba(255,255,255,0.15),rgba(255,255,255,0.07))",border:"1px solid rgba(255,255,255,0.15)",borderRadius:12,padding:"13px 0",color:"#fff",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif" }}>
-            Add to Log
+        ))}
+
+        {entries.length > 0 && (
+          <button
+            onClick={() => setEntries([])}
+            style={{
+              marginTop: 10,
+              padding: 8,
+              width: "100%",
+              borderRadius: 8,
+              background: "transparent",
+              color: "#aaa",
+              border: "1px solid #333",
+            }}
+          >
+            Clear
           </button>
-        </div>
+        )}
       </div>
     </div>
-  )}
-</div>
-```
-
-);
+  );
 }
