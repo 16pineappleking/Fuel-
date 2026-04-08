@@ -1,246 +1,112 @@
-import { useState, useRef, useEffect } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Macro Tracker</title>
+<style>
+  body { font-family:sans-serif; background:#111; color:#fff; padding:20px; max-width:400px; margin:auto; }
+  input, select, button { padding:6px; margin:4px 0; width:100%; border-radius:6px; border:none; }
+  .entry { padding:8px; border:1px solid #555; border-radius:8px; margin:6px 0; }
+  .totals { margin:10px 0; padding:10px; border:1px solid #888; border-radius:8px; }
+</style>
+</head>
+<body>
 
-const GOALS = { calories: 2200, protein: 150, carbs: 220, fat: 70 };
+<h1>Macro Tracker</h1>
 
-const UNITS = ["g", "oz", "cup", "tbsp", "tsp", "piece"];
+<div class="totals">
+  <p id="calories">Calories: 0</p>
+  <p id="protein">Protein: 0g</p>
+  <p id="carbs">Carbs: 0g</p>
+  <p id="fat">Fat: 0g</p>
+</div>
 
-const FRACTIONS = [
-  { label: "1/4", value: 0.25 },
-  { label: "1/3", value: 0.33 },
-  { label: "1/2", value: 0.5 },
-  { label: "2/3", value: 0.66 },
-  { label: "3/4", value: 0.75 },
-  { label: "1", value: 1 },
-  { label: "1.5", value: 1.5 },
-  { label: "2", value: 2 },
-];
+<h3>Add Food</h3>
+<input type="text" id="food-name" placeholder="Food name">
+<input type="number" id="food-calories" placeholder="Calories">
+<input type="number" id="food-protein" placeholder="Protein g">
+<input type="number" id="food-carbs" placeholder="Carbs g">
+<input type="number" id="food-fat" placeholder="Fat g">
 
-export default function App() {
-  const [entries, setEntries] = useState(() => {
-    const saved = localStorage.getItem("macro_entries");
-    return saved ? JSON.parse(saved) : [];
-  });
+<div style="display:flex; gap:4px;">
+  <input type="number" id="food-qty" placeholder="Qty" value="1" style="flex:1;">
+  <select id="food-unit" style="flex:2;">
+    <option value="g">g</option>
+    <option value="oz">oz</option>
+    <option value="cup">cup</option>
+    <option value="1/4 cup">1/4 cup</option>
+    <option value="1/3 cup">1/3 cup</option>
+    <option value="1/2 cup">1/2 cup</option>
+    <option value="tbsp">tbsp</option>
+    <option value="tsp">tsp</option>
+    <option value="piece">piece</option>
+  </select>
+</div>
 
-  const [custom, setCustom] = useState({
-    name: "",
-    calories: "",
-    protein: "",
-    carbs: "",
-    fat: "",
-    qty: 1,
-    unit: "cup",
-  });
+<button onclick="addFood()">Add to Log</button>
+<button onclick="clearLog()">Clear Log</button>
 
-  useEffect(() => {
-    localStorage.setItem("macro_entries", JSON.stringify(entries));
-  }, [entries]);
+<h3>Log</h3>
+<div id="log"></div>
 
-  const totals = entries.reduce(
-    (acc, e) => ({
-      calories: acc.calories + e.calories,
-      protein: acc.protein + e.protein,
-      carbs: acc.carbs + e.carbs,
-      fat: acc.fat + e.fat,
-    }),
-    { calories: 0, protein: 0, carbs: 0, fat: 0 }
-  );
+<script>
+let entries = [];
 
-  function addEntry(item) {
-    setEntries((prev) => [...prev, { ...item, id: Date.now() }]);
-  }
+function updateTotals() {
+  const totals = entries.reduce((a, e) => ({
+    calories: a.calories + e.calories,
+    protein: a.protein + e.protein,
+    carbs: a.carbs + e.carbs,
+    fat: a.fat + e.fat,
+  }), { calories:0, protein:0, carbs:0, fat:0 });
 
-  function addCustom() {
-    if (!custom.name || !custom.calories) return;
-
-    const q = Number(custom.qty) || 1;
-
-    addEntry({
-      name: `${custom.name} (${custom.qty} ${custom.unit})`,
-      calories: (Number(custom.calories) || 0) * q,
-      protein: (Number(custom.protein) || 0) * q,
-      carbs: (Number(custom.carbs) || 0) * q,
-      fat: (Number(custom.fat) || 0) * q,
-    });
-
-    setCustom({
-      name: "",
-      calories: "",
-      protein: "",
-      carbs: "",
-      fat: "",
-      qty: 1,
-      unit: "cup",
-    });
-  }
-
-  const pct = (val, goal) => Math.min((val / goal) * 100, 100);
-
-  const box = {
-    background: "rgba(255,255,255,0.05)",
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 12,
-  };
-
-  const input = {
-    padding: 10,
-    borderRadius: 8,
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "transparent",
-    color: "#fff",
-    width: "100%",
-  };
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "linear-gradient(180deg,#0a0a0f,#11111a)",
-        color: "#fff",
-        fontFamily: "sans-serif",
-        padding: 20,
-        maxWidth: 420,
-        margin: "0 auto",
-      }}
-    >
-      <h1>Macros</h1>
-
-      {/* TOTALS */}
-      <div style={box}>
-        <div>Calories: {Math.round(totals.calories)} / {GOALS.calories}</div>
-        <div>Protein: {Math.round(totals.protein)}g</div>
-        <div>Carbs: {Math.round(totals.carbs)}g</div>
-        <div>Fat: {Math.round(totals.fat)}g</div>
-
-        <div style={{ height: 6, background: "#222", marginTop: 10 }}>
-          <div style={{ width: `${pct(totals.calories, GOALS.calories)}%`, height: "100%", background: "#fff" }} />
-        </div>
-      </div>
-
-      {/* ADD FOOD */}
-      <div style={box}>
-        <h3>Add Food</h3>
-
-        <input
-          placeholder="Food name"
-          value={custom.name}
-          onChange={(e) => setCustom({ ...custom, name: e.target.value })}
-          style={input}
-        />
-
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <select
-            value={custom.qty}
-            onChange={(e) =>
-              setCustom({ ...custom, qty: Number(e.target.value) })
-            }
-            style={input}
-          >
-            {FRACTIONS.map((f) => (
-              <option key={f.label} value={f.value}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={custom.unit}
-            onChange={(e) =>
-              setCustom({ ...custom, unit: e.target.value })
-            }
-            style={input}
-          >
-            {UNITS.map((u) => (
-              <option key={u}>{u}</option>
-            ))}
-          </select>
-        </div>
-
-        <input
-          placeholder="Calories"
-          type="number"
-          value={custom.calories}
-          onChange={(e) =>
-            setCustom({ ...custom, calories: e.target.value })
-          }
-          style={{ ...input, marginTop: 8 }}
-        />
-
-        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-          <input
-            placeholder="Protein"
-            type="number"
-            value={custom.protein}
-            onChange={(e) =>
-              setCustom({ ...custom, protein: e.target.value })
-            }
-            style={input}
-          />
-          <input
-            placeholder="Carbs"
-            type="number"
-            value={custom.carbs}
-            onChange={(e) =>
-              setCustom({ ...custom, carbs: e.target.value })
-            }
-            style={input}
-          />
-          <input
-            placeholder="Fat"
-            type="number"
-            value={custom.fat}
-            onChange={(e) =>
-              setCustom({ ...custom, fat: e.target.value })
-            }
-            style={input}
-          />
-        </div>
-
-        <button
-          onClick={addCustom}
-          style={{
-            marginTop: 10,
-            padding: 12,
-            width: "100%",
-            borderRadius: 10,
-            border: "none",
-            background: "#fff",
-            color: "#000",
-            fontWeight: "bold",
-            cursor: "pointer",
-          }}
-        >
-          Add
-        </button>
-      </div>
-
-      {/* LOG */}
-      <div style={box}>
-        <h3>Log</h3>
-
-        {entries.map((e) => (
-          <div key={e.id} style={{ marginBottom: 8 }}>
-            {e.name} — {Math.round(e.calories)} kcal
-          </div>
-        ))}
-
-        {entries.length > 0 && (
-          <button
-            onClick={() => setEntries([])}
-            style={{
-              marginTop: 10,
-              padding: 8,
-              width: "100%",
-              borderRadius: 8,
-              background: "transparent",
-              color: "#aaa",
-              border: "1px solid #333",
-            }}
-          >
-            Clear
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  document.getElementById('calories').innerText = "Calories: "+totals.calories;
+  document.getElementById('protein').innerText = "Protein: "+totals.protein+"g";
+  document.getElementById('carbs').innerText = "Carbs: "+totals.carbs+"g";
+  document.getElementById('fat').innerText = "Fat: "+totals.fat+"g";
 }
+
+function renderLog() {
+  const log = document.getElementById('log');
+  log.innerHTML = '';
+  entries.forEach((e, i)=>{
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerText = `${e.name} (${e.qty} ${e.unit}) - ${e.calories} kcal | P${e.protein} C${e.carbs} F${e.fat}`;
+    log.appendChild(div);
+  });
+}
+
+function addFood() {
+  const name = document.getElementById('food-name').value;
+  const calories = Number(document.getElementById('food-calories').value);
+  const protein = Number(document.getElementById('food-protein').value);
+  const carbs = Number(document.getElementById('food-carbs').value);
+  const fat = Number(document.getElementById('food-fat').value);
+  const qty = document.getElementById('food-qty').value;
+  const unit = document.getElementById('food-unit').value;
+
+  if(!name || !calories) return;
+
+  entries.push({ name, calories, protein, carbs, fat, qty, unit });
+  updateTotals();
+  renderLog();
+
+  // clear inputs
+  document.getElementById('food-name').value='';
+  document.getElementById('food-calories').value='';
+  document.getElementById('food-protein').value='';
+  document.getElementById('food-carbs').value='';
+  document.getElementById('food-fat').value='';
+}
+
+function clearLog() {
+  entries = [];
+  updateTotals();
+  renderLog();
+}
+
+</script>
+</body>
+</html>
